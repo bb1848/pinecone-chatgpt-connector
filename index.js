@@ -2,6 +2,7 @@
 
 const express = require('express');
 const cors = require('cors');
+const { Pinecone } = require('@pinecone-database/pinecone');
 require('dotenv').config();
 
 const app = express();
@@ -20,26 +21,29 @@ async function initPinecone() {
     console.log("Initializing Pinecone connection...");
     console.log(`API Key present: ${!!process.env.PINECONE_API_KEY}`);
     console.log(`Index name: ${process.env.PINECONE_INDEX_NAME}`);
-
-    // Dynamically import Pinecone to handle different versions better
-    const { Pinecone } = await import('@pinecone-database/pinecone');
+    console.log(`Environment: ${process.env.PINECONE_ENVIRONMENT}`);
     
-    // Create Pinecone client with minimal configuration
+    // For older SDK versions that require environment
     pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
+      environment: process.env.PINECONE_ENVIRONMENT || 'us-west1-gcp' // Provide a default if not set
     });
     
     console.log("Pinecone client created successfully");
     
     // Get the index
     if (process.env.PINECONE_INDEX_NAME) {
-      index = pinecone.index(process.env.PINECONE_INDEX_NAME);
+      index = pinecone.Index(process.env.PINECONE_INDEX_NAME); // Note: capital 'I' in Index for older versions
       console.log("Pinecone index initialized");
       
       // Test the connection with a simple describeIndexStats
-      const stats = await index.describeIndexStats();
-      console.log("Successfully connected to Pinecone index");
-      console.log(`Index stats: ${JSON.stringify(stats)}`);
+      try {
+        const stats = await index.describeIndexStats();
+        console.log("Successfully connected to Pinecone index");
+        console.log(`Index stats: ${JSON.stringify(stats)}`);
+      } catch (statsError) {
+        console.error('Error getting index stats:', statsError);
+      }
     } else {
       console.error("PINECONE_INDEX_NAME environment variable is not set");
     }
@@ -58,7 +62,8 @@ app.get('/', async (req, res) => {
     indexConnected: !!index,
     envVars: {
       PINECONE_API_KEY: process.env.PINECONE_API_KEY ? 'Set (hidden)' : 'Not set',
-      PINECONE_INDEX_NAME: process.env.PINECONE_INDEX_NAME || 'Not set'
+      PINECONE_INDEX_NAME: process.env.PINECONE_INDEX_NAME || 'Not set',
+      PINECONE_ENVIRONMENT: process.env.PINECONE_ENVIRONMENT || 'Not set (using default)'
     }
   });
 });
