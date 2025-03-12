@@ -2,7 +2,6 @@
 
 const express = require('express');
 const cors = require('cors');
-const { Pinecone } = require('@pinecone-database/pinecone');
 require('dotenv').config();
 
 const app = express();
@@ -12,26 +11,46 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Initialize Pinecone client - with updated configuration
+// Initialize Pinecone client with explicit debug logging
 let pinecone;
 let index;
 
-try {
-  pinecone = new Pinecone({
-    apiKey: process.env.PINECONE_API_KEY,
-    // The environment is no longer needed in newer Pinecone versions
-  });
-  
-  // Get the index if Pinecone is properly initialized
-  if (process.env.PINECONE_INDEX_NAME) {
-    index = pinecone.index(process.env.PINECONE_INDEX_NAME);
+async function initPinecone() {
+  try {
+    console.log("Initializing Pinecone connection...");
+    console.log(`API Key present: ${!!process.env.PINECONE_API_KEY}`);
+    console.log(`Index name: ${process.env.PINECONE_INDEX_NAME}`);
+
+    // Dynamically import Pinecone to handle different versions better
+    const { Pinecone } = await import('@pinecone-database/pinecone');
+    
+    // Create Pinecone client with minimal configuration
+    pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY,
+    });
+    
+    console.log("Pinecone client created successfully");
+    
+    // Get the index
+    if (process.env.PINECONE_INDEX_NAME) {
+      index = pinecone.index(process.env.PINECONE_INDEX_NAME);
+      console.log("Pinecone index initialized");
+      
+      // Test the connection with a simple describeIndexStats
+      const stats = await index.describeIndexStats();
+      console.log("Successfully connected to Pinecone index");
+      console.log(`Index stats: ${JSON.stringify(stats)}`);
+    } else {
+      console.error("PINECONE_INDEX_NAME environment variable is not set");
+    }
+    
+  } catch (error) {
+    console.error('Error initializing Pinecone:', error);
   }
-} catch (error) {
-  console.error('Error initializing Pinecone:', error);
 }
 
 // Health check endpoint
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'Pinecone API connector is running',
@@ -62,6 +81,8 @@ app.post('/query', async (req, res) => {
       });
     }
     
+    console.log(`Querying Pinecone with vector of dimension ${vector.length}`);
+    
     const queryResponse = await index.query({
       vector,
       topK,
@@ -69,6 +90,8 @@ app.post('/query', async (req, res) => {
       includeValues: false,
       filter
     });
+    
+    console.log(`Query successful. Returned ${queryResponse.matches?.length || 0} matches`);
     
     res.json(queryResponse);
   } catch (error) {
@@ -101,12 +124,10 @@ app.get('/namespaces', async (req, res) => {
   }
 });
 
-// Start the server
-app.listen(port, () => {
+// Start the server and initialize Pinecone
+app.listen(port, async () => {
   console.log(`Pinecone API connector running on port ${port}`);
-  console.log(`Pinecone client initialized: ${!!pinecone}`);
-  console.log(`Pinecone index connected: ${!!index}`);
-  console.log(`Environment variables set:
-    - PINECONE_API_KEY: ${process.env.PINECONE_API_KEY ? 'Yes (hidden)' : 'No'}
-    - PINECONE_INDEX_NAME: ${process.env.PINECONE_INDEX_NAME || 'No'}`);
+  
+  // Initialize Pinecone after server starts
+  await initPinecone();
 });
