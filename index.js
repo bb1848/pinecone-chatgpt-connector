@@ -1,8 +1,7 @@
-// index.js - Main server file for Pinecone-ChatGPT connector
+// Pinecone initialization for direct connection to server URL
 
 const express = require('express');
 const cors = require('cors');
-const { Pinecone } = require('@pinecone-database/pinecone');
 require('dotenv').config();
 
 const app = express();
@@ -12,40 +11,42 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Initialize Pinecone client with explicit debug logging
-let pinecone;
+// Initialize Pinecone client
+let pineconeClient;
 let index;
 
 async function initPinecone() {
   try {
     console.log("Initializing Pinecone connection...");
-    console.log(`API Key present: ${!!process.env.PINECONE_API_KEY}`);
-    console.log(`Index name: ${process.env.PINECONE_INDEX_NAME}`);
-    console.log(`Environment: ${process.env.PINECONE_ENVIRONMENT}`);
     
-    // For older SDK versions that require environment
-    pinecone = new Pinecone({
+    // Import the Pinecone SDK
+    const { Pinecone } = require('@pinecone-database/pinecone');
+    
+    // Log environment variables for debugging
+    console.log("Environment variables:");
+    console.log(`- PINECONE_API_KEY: ${process.env.PINECONE_API_KEY ? "[SET]" : "[NOT SET]"}`);
+    console.log(`- PINECONE_INDEX_NAME: ${process.env.PINECONE_INDEX_NAME || "[NOT SET]"}`);
+    console.log(`- PINECONE_SERVER_URL: ${process.env.PINECONE_SERVER_URL || "[NOT SET]"}`);
+    
+    // Create Pinecone client
+    pineconeClient = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
-      environment: process.env.PINECONE_ENVIRONMENT || 'us-west1-gcp' // Provide a default if not set
     });
     
-    console.log("Pinecone client created successfully");
+    // Get the index - use the actual index name from the URL
+    const indexName = process.env.PINECONE_INDEX_NAME || "crawlnchat-7qo159o";
+    console.log(`Connecting to index: ${indexName}`);
     
-    // Get the index
-    if (process.env.PINECONE_INDEX_NAME) {
-      index = pinecone.Index(process.env.PINECONE_INDEX_NAME); // Note: capital 'I' in Index for older versions
-      console.log("Pinecone index initialized");
-      
-      // Test the connection with a simple describeIndexStats
-      try {
-        const stats = await index.describeIndexStats();
-        console.log("Successfully connected to Pinecone index");
-        console.log(`Index stats: ${JSON.stringify(stats)}`);
-      } catch (statsError) {
-        console.error('Error getting index stats:', statsError);
-      }
-    } else {
-      console.error("PINECONE_INDEX_NAME environment variable is not set");
+    // Try to connect to the index
+    index = pineconeClient.Index(indexName);
+    
+    // Test connection with a simple stats query
+    try {
+      const stats = await index.describeIndexStats();
+      console.log("Successfully connected to Pinecone!");
+      console.log(`Index stats: ${JSON.stringify(stats)}`);
+    } catch (statsError) {
+      console.error("Error getting index stats:", statsError);
     }
     
   } catch (error) {
@@ -58,12 +59,11 @@ app.get('/', async (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'Pinecone API connector is running',
-    pineconeConnected: !!pinecone,
+    pineconeConnected: !!pineconeClient,
     indexConnected: !!index,
-    envVars: {
-      PINECONE_API_KEY: process.env.PINECONE_API_KEY ? 'Set (hidden)' : 'Not set',
-      PINECONE_INDEX_NAME: process.env.PINECONE_INDEX_NAME || 'Not set',
-      PINECONE_ENVIRONMENT: process.env.PINECONE_ENVIRONMENT || 'Not set (using default)'
+    config: {
+      index_name: process.env.PINECONE_INDEX_NAME || "crawlnchat-7qo159o",
+      server_url: process.env.PINECONE_SERVER_URL || "https://crawlnchat-7qo159o.svc.aped-4627-b74a.pinecone.io"
     }
   });
 });
@@ -103,27 +103,6 @@ app.post('/query', async (req, res) => {
     console.error('Error querying Pinecone:', error);
     res.status(500).json({ 
       error: 'Failed to query Pinecone database',
-      details: error.message 
-    });
-  }
-});
-
-// Optional namespace list endpoint
-app.get('/namespaces', async (req, res) => {
-  try {
-    if (!index) {
-      return res.status(503).json({ 
-        error: 'Pinecone connection not initialized',
-        details: 'Please check your environment variables and server logs'
-      });
-    }
-    
-    const describeIndexStatsResponse = await index.describeIndexStats();
-    res.json(describeIndexStatsResponse.namespaces || {});
-  } catch (error) {
-    console.error('Error getting namespaces:', error);
-    res.status(500).json({ 
-      error: 'Failed to retrieve namespaces',
       details: error.message 
     });
   }
