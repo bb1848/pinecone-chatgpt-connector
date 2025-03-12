@@ -1,7 +1,8 @@
-// Pinecone initialization for direct connection to server URL
+// index.js - Main server file for Pinecone-ChatGPT connector
 
 const express = require('express');
 const cors = require('cors');
+const { Pinecone } = require('@pinecone-database/pinecone');
 require('dotenv').config();
 
 const app = express();
@@ -19,25 +20,45 @@ async function initPinecone() {
   try {
     console.log("Initializing Pinecone connection...");
     
-    // Import the Pinecone SDK
-    const { Pinecone } = require('@pinecone-database/pinecone');
+    // Parse the server URL to extract environment information
+    const serverUrl = process.env.PINECONE_SERVER_URL || "https://crawlnchat-7qo159o.svc.aped-4627-b74a.pinecone.io";
     
-    // Log environment variables for debugging
+    // For the server URL like https://crawlnchat-7qo159o.svc.aped-4627-b74a.pinecone.io
+    // The environment should be "aped-4627-b74a"
+    let environment = "gcp-starter"; // Default fallback
+    
+    try {
+      const urlParts = serverUrl.split('.');
+      if (urlParts.length >= 3) {
+        // Find the part that contains 'aped' or similar environment identifier
+        for (const part of urlParts) {
+          if (part.includes('-')) {
+            environment = part;
+            break;
+          }
+        }
+      }
+    } catch (parseError) {
+      console.error("Error parsing server URL:", parseError);
+    }
+    
     console.log("Environment variables:");
     console.log(`- PINECONE_API_KEY: ${process.env.PINECONE_API_KEY ? "[SET]" : "[NOT SET]"}`);
     console.log(`- PINECONE_INDEX_NAME: ${process.env.PINECONE_INDEX_NAME || "[NOT SET]"}`);
-    console.log(`- PINECONE_SERVER_URL: ${process.env.PINECONE_SERVER_URL || "[NOT SET]"}`);
+    console.log(`- Server URL: ${serverUrl}`);
+    console.log(`- Extracted environment: ${environment}`);
     
-    // Create Pinecone client
+    // Create Pinecone client with the environment parameter
     pineconeClient = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
+      environment: environment
     });
     
-    // Get the index - use the actual index name from the URL
+    // Get the index
     const indexName = process.env.PINECONE_INDEX_NAME || "crawlnchat-7qo159o";
     console.log(`Connecting to index: ${indexName}`);
     
-    // Try to connect to the index
+    // Try to connect to the index (notice uppercase 'I' in Index for older SDK versions)
     index = pineconeClient.Index(indexName);
     
     // Test connection with a simple stats query
