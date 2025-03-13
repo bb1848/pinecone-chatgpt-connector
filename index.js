@@ -1,120 +1,74 @@
-// index.js - Direct implementation without Pinecone SDK
-
 const express = require('express');
+const { OpenAI } = require('openai');
+const { PineconeClient } = require('@pinecone-database/pinecone');
 const cors = require('cors');
-const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 3000;
-
-// Middleware
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
-// Configuration
-const config = {
-  pineconeApiKey: process.env.PINECONE_API_KEY,
-  pineconeServerUrl: process.env.PINECONE_SERVER_URL || 'https://crawlnchat-7qo159o.svc.aped-4627-b74a.pinecone.io',
-  pineconeIndexName: process.env.PINECONE_INDEX_NAME || 'crawlnchat-7qo159o'
-};
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-// Test the connection to Pinecone
-async function testPineconeConnection() {
-  try {
-    console.log(`Testing connection to Pinecone at: ${config.pineconeServerUrl}`);
-    
-    const response = await axios({
-      method: 'get',
-      url: `${config.pineconeServerUrl}/describe_index_stats`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Api-Key': config.pineconeApiKey
-      }
-    });
-    
-    console.log('Successfully connected to Pinecone!');
-    console.log(`Index stats: ${JSON.stringify(response.data)}`);
-    return true;
-  } catch (error) {
-    console.error('Error connecting to Pinecone:', error.message);
-    if (error.response) {
-      console.error('Response data:', error.response.data);
-      console.error('Response status:', error.response.status);
-    }
-    return false;
-  }
-}
+// Initialize Pinecone client
+const pinecone = new PineconeClient();
 
-// Health check endpoint
+pinecone.init({
+  environment: 'aped-4627-b74a',
+  apiKey: process.env.PINECONE_API_KEY
+});
+
+// Status endpoint
 app.get('/', async (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     message: 'Pinecone API connector is running',
     config: {
-      pineconeServerUrl: config.pineconeServerUrl,
-      pineconeIndexName: config.pineconeIndexName,
-      pineconeApiKey: config.pineconeApiKey ? 'Set (hidden)' : 'Not set'
+      pineconeServerUrl: 'https://crawlnchat-7qo159o.svc.aped-4627-b74a.pinecone.io',
+      pineconeIndexName: 'crawlnchat-7qo159o',
+      pineconeApiKey: 'Set (hidden)'
     }
   });
 });
 
-// Query endpoint
+// Update your query endpoint to accept text and convert it to embeddings
 app.post('/query', async (req, res) => {
   try {
-    const { vector, topK = 5, filter = {} } = req.body;
+    const { query, namespace = 'sunwest_bank', topK = 10, includeMetadata = true } = req.body;
     
-    if (!vector || !Array.isArray(vector)) {
-      return res.status(400).json({ 
-        error: 'Invalid request. Please provide a vector array.' 
-      });
+    if (!query) {
+      return res.status(400).json({ error: 'Please provide a query string' });
     }
-    
-    console.log(`Querying Pinecone with vector of dimension ${vector.length}`);
-    
-    const queryResponse = await axios({
-      method: 'post',
-      url: `${config.pineconeServerUrl}/query`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Api-Key': config.pineconeApiKey
-      },
-      data: {
-        vector,
-        topK,
-        includeMetadata: true,
-        includeValues: false,
-        filter
-      }
+
+    // Generate embeddings from the query text
+    const embeddingResponse = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: query,
     });
     
-    console.log(`Query successful. Returned ${queryResponse.data.matches?.length || 0} matches`);
+    const vector = embeddingResponse.data[0].embedding;
     
-    res.json(queryResponse.data);
+    // Now query Pinecone with the generated vector
+    const index = pinecone.Index('crawlnchat-7qo159o');
+    
+    const queryResponse = await index.query({
+      vector,
+      namespace,
+      topK,
+      includeMetadata
+    });
+    
+    res.json(queryResponse);
   } catch (error) {
-    console.error('Error querying Pinecone:', error.message);
-    
-    if (error.response) {
-      console.error('Response data:', error.response.data);
-      console.error('Response status:', error.response.status);
-      
-      return res.status(error.response.status).json({
-        error: 'Failed to query Pinecone database',
-        details: error.response.data
-      });
-    }
-    
-    res.status(500).json({ 
-      error: 'Failed to query Pinecone database',
-      details: error.message 
-    });
+    console.error('Error processing query:', error);
+    res.status(500).json({ error: 'An error occurred while processing your query' });
   }
 });
 
-// Start the server
-app.listen(port, async () => {
-  console.log(`Pinecone API connector running on port ${port}`);
-  
-  // Test the connection
-  await testPineconeConnection();
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
