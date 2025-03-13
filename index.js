@@ -54,7 +54,7 @@ async function getEmbedding(text) {
 }
 
 // Helper function to query Pinecone
-async function queryPinecone(vector, namespace = 'sunwest_bank', topK = 10) {
+async function queryPinecone(vector, namespace = 'sunwest_bank', topK = 50) {
   try {
     if (!process.env.PINECONE_API_KEY) {
       throw new Error("Missing Pinecone API key. Please set PINECONE_API_KEY.");
