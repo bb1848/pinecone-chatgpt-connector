@@ -26,14 +26,45 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Helper function to query Pinecone directly using fetch
+// Helper function to generate embeddings
+async function getEmbedding(text) {
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("Missing OpenAI API key. Please set OPENAI_API_KEY in environment variables.");
+    }
+
+    console.log("Generating embedding for query:", text);
+
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-ada-002',
+      input: text,
+    });
+
+    console.log("OpenAI Embedding API Response:", JSON.stringify(response, null, 2)); // Debugging log
+
+    if (!response || !response.data || !response.data.length) {
+      throw new Error("Unexpected OpenAI API response format");
+    }
+
+    return response.data[0].embedding;  // ✅ Corrected parsing
+  } catch (error) {
+    console.error("Error generating embedding:", error);
+    throw error;
+  }
+}
+
+// Helper function to query Pinecone
 async function queryPinecone(vector, namespace = 'sunwest_bank', topK = 10) {
   try {
-    // Construct the Pinecone query URL using the environment and index name
+    if (!process.env.PINECONE_API_KEY) {
+      throw new Error("Missing Pinecone API key. Please set PINECONE_API_KEY.");
+    }
+
+    // Construct the Pinecone query URL
     const url = `https://${process.env.PINECONE_INDEX_NAME}.svc.${process.env.PINECONE_ENVIRONMENT}.pinecone.io/query`;
-    
-    console.log('Querying Pinecone at URL:', url);
-    
+
+    console.log("Querying Pinecone at URL:", url);
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -47,15 +78,15 @@ async function queryPinecone(vector, namespace = 'sunwest_bank', topK = 10) {
         namespace
       })
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Pinecone API error: ${response.status} - ${errorText}`);
     }
-    
+
     return await response.json();
   } catch (error) {
-    console.error('Error querying Pinecone:', error);
+    console.error("Error querying Pinecone:", error);
     throw error;
   }
 }
@@ -68,11 +99,10 @@ app.get('/', (req, res) => {
 // Test route to verify Pinecone connection
 app.get('/test-pinecone', async (req, res) => {
   try {
-    // Try to access the Pinecone index directly
     const url = `https://${process.env.PINECONE_INDEX_NAME}.svc.${process.env.PINECONE_ENVIRONMENT}.pinecone.io/describe_index_stats`;
-    
-    console.log('Testing Pinecone connection at URL:', url);
-    
+
+    console.log("Testing Pinecone connection at URL:", url);
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -80,21 +110,20 @@ app.get('/test-pinecone', async (req, res) => {
         'Api-Key': process.env.PINECONE_API_KEY
       }
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Pinecone API error: ${response.status} - ${errorText}`);
     }
-    
+
     const data = await response.json();
-    
     res.json({
       status: 'success',
       message: 'Successfully connected to Pinecone',
       indexStats: data
     });
   } catch (error) {
-    console.error('Error testing Pinecone connection:', error);
+    console.error("Error testing Pinecone connection:", error);
     res.status(500).json({
       status: 'error',
       message: error.message
@@ -111,53 +140,49 @@ app.post('/query', async (req, res) => {
       return res.status(400).json({ error: 'Query text is required' });
     }
 
-    console.log('Received query:', query);
+    console.log("Received query:", query);
 
     // Generate embedding for the query text using OpenAI
     try {
-      const embeddingResponse = await openai.embeddings.create({
-        model: 'text-embedding-ada-002',
-        input: query,
-      });
+      const queryEmbedding = await getEmbedding(query);
 
-      if (!embeddingResponse || !embeddingResponse.data.data[0].embedding) {
-        return res.status(500).json({ error: 'Failed to generate embedding' });
-      }
+      console.log("Generated embedding vector with length:", queryEmbedding.length);
 
-      const queryEmbedding = embeddingResponse.data.data[0].embedding;
-      console.log('Generated embedding vector with length:', queryEmbedding.length);
-
-      // Use the direct fetch function to query Pinecone
+      // Query Pinecone
       try {
-        const searchResponse = await queryPinecone(queryEmbedding, 'sunwest_bank', 5);
-        console.log('Pinecone search completed successfully');
+        const searchResponse = await queryPinecone(queryEmbedding, 'sunwest_bank', 10);
+        console.log("Pinecone search completed successfully");
 
-        // Format and return results
+        // Format results
         const results = searchResponse.matches.map(match => ({
           id: match.id,
           score: match.score,
           metadata: match.metadata
         }));
 
+        if (results.length === 0) {
+          return res.json({ message: "No relevant information found. Try rephrasing your query." });
+        }
+
         res.json({ results });
       } catch (pineconeError) {
-        console.error('Error querying Pinecone:', pineconeError);
+        console.error("Error querying Pinecone:", pineconeError);
         res.status(500).json({ 
-          error: 'An error occurred while querying Pinecone',
+          error: "An error occurred while querying Pinecone",
           details: pineconeError.message
         });
       }
     } catch (openaiError) {
-      console.error('Error generating embedding:', openaiError);
+      console.error("Error generating embedding:", openaiError);
       res.status(500).json({ 
-        error: 'An error occurred while generating embedding',
+        error: "An error occurred while generating embedding",
         details: openaiError.message
       });
     }
   } catch (error) {
-    console.error('General error processing query:', error);
+    console.error("General error processing query:", error);
     res.status(500).json({ 
-      error: 'An error occurred while processing your query',
+      error: "An error occurred while processing your query",
       details: error.message
     });
   }
