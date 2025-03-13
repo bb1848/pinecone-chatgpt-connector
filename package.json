@@ -1,23 +1,35 @@
 {
   "name": "pinecone-chatgpt-connector",
   "version": "1.0.0",
-  "description": "API server to connect Custom GPT with Pinecone vector database",
+  "description": "Connector service for ChatGPT to query Pinecone vector database",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "@pinecone-database/pinecone": "^0.1.6",
-    "openai": "^4.0.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.0.3"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "keywords": [
+    "pinecone",
+    "chatgpt",
+    "openai",
+    "vector",
+    "database",
+    "connector"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@pinecone-database/pinecone": "^1.1.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0",
+    "openai": "^4.26.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
   }
 }
