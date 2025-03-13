@@ -1,97 +1,50 @@
-const express = require('express');
-const { Pinecone } = require('@pinecone-database/pinecone');
-const { OpenAI } = require('openai');
-const cors = require('cors');
-require('dotenv').config();
-
-const app = express();
-app.use(express.json());
-app.use(cors());
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-// Initialize Pinecone client with the updated SDK approach
-const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY,
-  environment: 'aped-4627-b74a'
-});
-
-// Get the index directly without using the client.Index method
-const index = pinecone.Index("crawlnchat-7qo159o");
-
-// Status endpoint
-app.get('/', async (req, res) => {
-  res.json({
-    status: 'ok',
-    message: 'Pinecone API connector is running',
-    config: {
-      pineconeServerUrl: 'https://crawlnchat-7qo159o.svc.aped-4627-b74a.pinecone.io',
-      pineconeIndexName: 'crawlnchat-7qo159o',
-      pineconeApiKey: 'Set (hidden)'
-    }
-  });
-});
-
-// Add endpoint to accept text queries
 app.post('/query', async (req, res) => {
   try {
-    const { query, namespace = 'sunwest_bank', topK = 10, includeMetadata = true } = req.body;
+    console.log('Received request body:', JSON.stringify(req.body));
     
-    if (!query) {
-      return res.status(400).json({ error: 'Please provide a query string' });
+    // Extract query from request body, with flexible property access
+    let queryText;
+    if (req.body.query) {
+      queryText = req.body.query;
+    } else if (req.body.text) {
+      queryText = req.body.text;
+    } else if (req.body.question) {
+      queryText = req.body.question;
+    } else if (typeof req.body === 'string') {
+      queryText = req.body;
+    } else {
+      // If no recognizable query format, return a specific error
+      return res.status(400).json({
+        error: 'Please provide a query string using one of these formats: {query: "your question"}, {text: "your question"}, or {question: "your question"}',
+        receivedBody: req.body
+      });
     }
-
+    
+    // Now proceed with the query as normal
+    console.log(`Processing query: "${queryText}"`);
+    
     // Generate embeddings from the query text
     const embeddingResponse = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: query,
+      input: queryText,
     });
     
     const vector = embeddingResponse.data[0].embedding;
     
-    // Query Pinecone with the generated vector
+    // Now query Pinecone with the generated vector
     const queryResponse = await index.query({
       vector,
-      namespace,
-      topK,
-      includeMetadata
+      namespace: 'sunwest_bank',
+      topK: 10,
+      includeMetadata: true
     });
     
     res.json(queryResponse);
   } catch (error) {
     console.error('Error processing query:', error);
-    res.status(500).json({ error: `An error occurred: ${error.message}` });
-  }
-});
-
-// Also keep the original endpoint for backwards compatibility
-app.post('/query-vector', async (req, res) => {
-  try {
-    const { vector, namespace = 'sunwest_bank', topK = 10, includeMetadata = true } = req.body;
-    
-    if (!vector || !Array.isArray(vector)) {
-      return res.status(400).json({ error: 'Invalid request. Please provide a vector array.' });
-    }
-    
-    // Query Pinecone with the provided vector
-    const queryResponse = await index.query({
-      vector,
-      namespace,
-      topK,
-      includeMetadata
+    res.status(500).json({ 
+      error: `An error occurred: ${error.message}`, 
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
     });
-    
-    res.json(queryResponse);
-  } catch (error) {
-    console.error('Error processing vector query:', error);
-    res.status(500).json({ error: `An error occurred: ${error.message}` });
   }
-});
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });
