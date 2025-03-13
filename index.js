@@ -2,7 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const { PineconeClient } = require('@pinecone-database/pinecone');
-const { Configuration, OpenAIApi } = require('openai');
+const OpenAI = require('openai');
 require('dotenv').config();
 
 // Initialize Express app
@@ -13,10 +13,9 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize OpenAI client
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(configuration);
 
 // Initialize Pinecone client
 const pinecone = new PineconeClient();
@@ -51,16 +50,16 @@ app.post('/query', async (req, res) => {
     console.log('Received query:', query);
 
     // Generate embedding for the query text using OpenAI
-    const embeddingResponse = await openai.createEmbedding({
+    const embeddingResponse = await openai.embeddings.create({
       model: 'text-embedding-ada-002',
       input: query,
     });
 
-    if (!embeddingResponse.data || !embeddingResponse.data.data[0].embedding) {
+    if (!embeddingResponse || !embeddingResponse.data[0].embedding) {
       return res.status(500).json({ error: 'Failed to generate embedding' });
     }
 
-    const queryEmbedding = embeddingResponse.data.data[0].embedding;
+    const queryEmbedding = embeddingResponse.data[0].embedding;
     console.log('Generated embedding vector with length:', queryEmbedding.length);
 
     // Perform vector search using Pinecone
