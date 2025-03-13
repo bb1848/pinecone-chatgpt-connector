@@ -29,6 +29,7 @@ const openai = new OpenAI({
 // Initialize Pinecone client (v1.x)
 const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY,
+  environment: process.env.PINECONE_ENVIRONMENT // Add this line
 });
 
 // Connect to Pinecone and test the connection
