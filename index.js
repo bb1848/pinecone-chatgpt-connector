@@ -27,7 +27,7 @@ const openai = new OpenAI({
 });
 
 // Helper function to query Pinecone directly using fetch
-async function queryPinecone(vector, namespace = 'sunwest_bank', topK = 5) {
+async function queryPinecone(vector, namespace = 'sunwest_bank', topK = 10) {
   try {
     // Construct the Pinecone query URL using the environment and index name
     const url = `https://${process.env.PINECONE_INDEX_NAME}.svc.${process.env.PINECONE_ENVIRONMENT}.pinecone.io/query`;
@@ -120,11 +120,11 @@ app.post('/query', async (req, res) => {
         input: query,
       });
 
-      if (!embeddingResponse || !embeddingResponse.data[0].embedding) {
+      if (!embeddingResponse || !embeddingResponse.data.data[0].embedding) {
         return res.status(500).json({ error: 'Failed to generate embedding' });
       }
 
-      const queryEmbedding = embeddingResponse.data[0].embedding;
+      const queryEmbedding = embeddingResponse.data.data[0].embedding;
       console.log('Generated embedding vector with length:', queryEmbedding.length);
 
       // Use the direct fetch function to query Pinecone
