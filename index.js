@@ -1,9 +1,31 @@
+// Add this at the beginning of your index.js file to check all environment variables
+console.log('==== ENVIRONMENT VARIABLES CHECK ====');
+console.log('PINECONE_ENVIRONMENT:', process.env.PINECONE_ENVIRONMENT ? '[SET]' : '[NOT SET]');
+console.log('PINECONE_INDEX_NAME:', process.env.PINECONE_INDEX_NAME ? '[SET]' : '[NOT SET]');
+console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? '[SET]' : '[NOT SET]');
+console.log('PINECONE_API_KEY:', process.env.PINECONE_API_KEY ? '[SET]' : '[NOT SET]');
+console.log('PORT:', process.env.PORT);
+console.log('====================================');
+
+// Also check the type of environment variables
+console.log('PINECONE_ENVIRONMENT type:', typeof process.env.PINECONE_ENVIRONMENT);
+console.log('PINECONE_ENVIRONMENT length:', process.env.PINECONE_ENVIRONMENT ? process.env.PINECONE_ENVIRONMENT.length : 0);
+console.log('PINECONE_ENVIRONMENT first few chars:', 
+  process.env.PINECONE_ENVIRONMENT ? 
+  process.env.PINECONE_ENVIRONMENT.substring(0, 3) + '...' : 
+  'N/A');
+
 // Import required dependencies
 const express = require('express');
 const cors = require('cors');
 const { PineconeClient } = require('@pinecone-database/pinecone');
 const OpenAI = require('openai');
 require('dotenv').config();
+
+// Log package versions for debugging
+console.log('Node.js version:', process.version);
+console.log('Pinecone package:', require('@pinecone-database/pinecone/package.json').version);
+console.log('OpenAI package:', require('openai/package.json').version);
 
 // Initialize Express app
 const app = express();
@@ -23,13 +45,34 @@ const pinecone = new PineconeClient();
 // Connect to Pinecone
 (async function initPinecone() {
   try {
+    // Log environment variables (except API key)
+    console.log('Initializing Pinecone with:');
+    console.log('- Environment:', process.env.PINECONE_ENVIRONMENT);
+    console.log('- Index Name:', process.env.PINECONE_INDEX_NAME);
+    
     await pinecone.init({
-      environment: process.env.PINECONE_ENVIRONMENT,
-      apiKey: process.env.PINECONE_API_KEY,
+      environment: process.env.PINECONE_ENVIRONMENT || '',
+      apiKey: process.env.PINECONE_API_KEY || '',
     });
     console.log('Pinecone client initialized successfully');
+    
+    // Test connection by listing indexes
+    try {
+      const indexList = await pinecone.listIndexes();
+      console.log('Available Pinecone indexes:', indexList);
+      
+      if (!indexList.includes(process.env.PINECONE_INDEX_NAME)) {
+        console.warn(`Warning: Index '${process.env.PINECONE_INDEX_NAME}' not found in your Pinecone project`);
+      }
+    } catch (listError) {
+      console.error('Error listing Pinecone indexes:', listError);
+    }
   } catch (error) {
     console.error('Error initializing Pinecone client:', error);
+    // Additional debug info
+    if (error.message && error.message.includes('Not Found')) {
+      console.error('This usually indicates an incorrect environment or API key');
+    }
   }
 })();
 
