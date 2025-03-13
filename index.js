@@ -1,7 +1,7 @@
 // Import required dependencies
 const express = require('express');
 const cors = require('cors');
-const { Pinecone } = require('@pinecone-database/pinecone');
+const fetch = require('node-fetch');
 const OpenAI = require('openai');
 require('dotenv').config();
 
@@ -14,7 +14,7 @@ console.log('PINECONE_API_KEY:', process.env.PINECONE_API_KEY ? '[SET]' : '[NOT 
 console.log('PORT:', process.env.PORT);
 console.log('====================================');
 
-// Initialize Express app FIRST (before using it)
+// Initialize Express app
 const app = express();
 
 // Configure middleware
@@ -26,44 +26,72 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Initialize Pinecone client (v1.x)
-const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY,
-  environment: process.env.PINECONE_ENVIRONMENT // Add this line
-});
-
-// Connect to Pinecone and test the connection
-(async function initPinecone() {
+// Helper function to query Pinecone directly using fetch
+async function queryPinecone(vector, namespace = 'sunwest_bank', topK = 5) {
   try {
-    // List indexes to verify connection
-    const indexes = await pinecone.listIndexes();
-    console.log('Pinecone client initialized successfully');
-    console.log('Available Pinecone indexes:', indexes.map(idx => idx.name));
+    // Construct the Pinecone query URL using the environment and index name
+    const url = `https://${process.env.PINECONE_INDEX_NAME}.svc.${process.env.PINECONE_ENVIRONMENT}.pinecone.io/query`;
     
-    const indexExists = indexes.some(idx => idx.name === process.env.PINECONE_INDEX_NAME);
-    if (!indexExists) {
-      console.warn(`Warning: Index '${process.env.PINECONE_INDEX_NAME}' not found in your Pinecone project`);
-    } else {
-      console.log(`Found index: ${process.env.PINECONE_INDEX_NAME}`);
+    console.log('Querying Pinecone at URL:', url);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Api-Key': process.env.PINECONE_API_KEY
+      },
+      body: JSON.stringify({
+        vector,
+        topK,
+        includeMetadata: true,
+        namespace
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Pinecone API error: ${response.status} - ${errorText}`);
     }
+    
+    return await response.json();
   } catch (error) {
-    console.error('Error initializing Pinecone client:', error);
-    console.log('PINECONE_INDEX_NAME:', process.env.PINECONE_INDEX_NAME);
+    console.error('Error querying Pinecone:', error);
+    throw error;
   }
-})();
+}
 
-// Define routes
+// Route to check if the server is running
 app.get('/', (req, res) => {
   res.send('Pinecone-ChatGPT Connector API is running');
 });
 
-// Test route to verify Pinecone credentials
+// Test route to verify Pinecone connection
 app.get('/test-pinecone', async (req, res) => {
   try {
-    const indexes = await pinecone.listIndexes();
+    // Try to access the Pinecone index directly
+    const url = `https://${process.env.PINECONE_INDEX_NAME}.svc.${process.env.PINECONE_ENVIRONMENT}.pinecone.io/describe_index_stats`;
+    
+    console.log('Testing Pinecone connection at URL:', url);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Api-Key': process.env.PINECONE_API_KEY
+      }
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Pinecone API error: ${response.status} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    
     res.json({
       status: 'success',
-      indexes: indexes.map(idx => idx.name)
+      message: 'Successfully connected to Pinecone',
+      indexStats: data
     });
   } catch (error) {
     console.error('Error testing Pinecone connection:', error);
@@ -99,18 +127,9 @@ app.post('/query', async (req, res) => {
       const queryEmbedding = embeddingResponse.data[0].embedding;
       console.log('Generated embedding vector with length:', queryEmbedding.length);
 
-      // Perform vector search using Pinecone (v1.x syntax)
+      // Use the direct fetch function to query Pinecone
       try {
-        const index = pinecone.index(process.env.PINECONE_INDEX_NAME);
-        
-        console.log('Querying Pinecone index:', process.env.PINECONE_INDEX_NAME);
-        const searchResponse = await index.query({
-          vector: queryEmbedding,
-          topK: 5,
-          includeMetadata: true,
-          namespace: 'sunwest_bank'
-        });
-        
+        const searchResponse = await queryPinecone(queryEmbedding, 'sunwest_bank', 5);
         console.log('Pinecone search completed successfully');
 
         // Format and return results
