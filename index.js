@@ -1,6 +1,6 @@
 const express = require('express');
+const { Pinecone } = require('@pinecone-database/pinecone');
 const { OpenAI } = require('openai');
-const { PineconeClient } = require('@pinecone-database/pinecone');
 const cors = require('cors');
 require('dotenv').config();
 
@@ -13,13 +13,13 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Initialize Pinecone client
-const pinecone = new PineconeClient();
-
-pinecone.init({
-  environment: 'aped-4627-b74a',
+// Initialize Pinecone client with the updated SDK approach
+const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY
 });
+
+// Get the index directly without using the client.Index method
+const index = pinecone.Index("crawlnchat-7qo159o");
 
 // Status endpoint
 app.get('/', async (req, res) => {
@@ -34,7 +34,7 @@ app.get('/', async (req, res) => {
   });
 });
 
-// Update your query endpoint to accept text and convert it to embeddings
+// Add endpoint to accept text queries
 app.post('/query', async (req, res) => {
   try {
     const { query, namespace = 'sunwest_bank', topK = 10, includeMetadata = true } = req.body;
@@ -51,9 +51,7 @@ app.post('/query', async (req, res) => {
     
     const vector = embeddingResponse.data[0].embedding;
     
-    // Now query Pinecone with the generated vector
-    const index = pinecone.Index('crawlnchat-7qo159o');
-    
+    // Query Pinecone with the generated vector
     const queryResponse = await index.query({
       vector,
       namespace,
@@ -64,11 +62,35 @@ app.post('/query', async (req, res) => {
     res.json(queryResponse);
   } catch (error) {
     console.error('Error processing query:', error);
-    res.status(500).json({ error: 'An error occurred while processing your query' });
+    res.status(500).json({ error: `An error occurred: ${error.message}` });
   }
 });
 
-const PORT = process.env.PORT || 3000;
+// Also keep the original endpoint for backwards compatibility
+app.post('/query-vector', async (req, res) => {
+  try {
+    const { vector, namespace = 'sunwest_bank', topK = 10, includeMetadata = true } = req.body;
+    
+    if (!vector || !Array.isArray(vector)) {
+      return res.status(400).json({ error: 'Invalid request. Please provide a vector array.' });
+    }
+    
+    // Query Pinecone with the provided vector
+    const queryResponse = await index.query({
+      vector,
+      namespace,
+      topK,
+      includeMetadata
+    });
+    
+    res.json(queryResponse);
+  } catch (error) {
+    console.error('Error processing vector query:', error);
+    res.status(500).json({ error: `An error occurred: ${error.message}` });
+  }
+});
+
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
