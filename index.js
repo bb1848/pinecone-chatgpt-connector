@@ -15,7 +15,8 @@ const openai = new OpenAI({
 
 // Initialize Pinecone client with the updated SDK approach
 const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY
+  apiKey: process.env.PINECONE_API_KEY,
+  environment: 'aped-4627-b74a'
 });
 
 // Get the index directly without using the client.Index method
